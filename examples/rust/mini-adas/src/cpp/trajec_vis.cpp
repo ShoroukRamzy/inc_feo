@@ -6,6 +6,7 @@
 
 #include "feo_cpp/feo_macros.h"
 #include <cstdint>
+#include <iostream>
 
 TrajectoryVisualizer::TrajectoryVisualizer(const uint64_t activity_id) {
     this->activity_id = activity_id;

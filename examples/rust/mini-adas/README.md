@@ -20,6 +20,9 @@ cargo run --bin adas_secondary 1
 ```sh
 cargo run --bin adas_secondary 2
 ```
+```sh
+cargo run --bin adas_secondary 3
+```
 
 If you want to include recording,
 you need to pass the recorder's agent ID to the primary

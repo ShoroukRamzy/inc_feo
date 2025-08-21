@@ -17,10 +17,8 @@ use feo_com::interface::{ActivityInput, ActivityOutput};
 use feo_com::iox2::{Iox2Input, Iox2Output};
 #[cfg(feature = "com_linux_shm")]
 use feo_com::linux_shm::{LinuxShmInput, LinuxShmOutput};
-use feo_log::{debug, error};
+use feo_log::{debug};
 use feo_tracing::{instrument, tracing};
-use feo_time::timestamp;
-
 use std::hash::RandomState;
 use std::thread;
 
@@ -89,9 +87,7 @@ impl Activity for Camera {
             let image = self.get_image();
             debug!("Sending image: {image:?}");
             let camera = camera.write_payload(image);
-            if let Err(e) = camera.send() {
-                error!("Camera failed to send image: {}", e);
-            }
+            camera.send().unwrap();
         }
     }
 
@@ -154,11 +150,11 @@ impl Activity for Radar {
             let scan = self.get_scan();
             debug!("Sending scan: {scan:?}");
             let radar = radar.write_payload(scan);
-            if let Err(e) = radar.send() {
-                error!("Radar failed to send scan: {}", e);
-            }
+            radar.send().unwrap();
+           
         }
     }
+
     #[instrument(name = "Radar shutdown")]
     fn shutdown(&mut self) {}
 }
@@ -330,7 +326,6 @@ impl Activity for EmergencyBraking {
     fn shutdown(&mut self) {}
 }
 
-
 /// Brake controller activity
 ///
 /// This component emulates a brake controller
@@ -343,12 +338,12 @@ pub struct BrakeController {
     activity_id: ActivityId,
     /// Brake instruction input
     input_brake_instruction: Box<dyn ActivityInput<BrakeInstruction>>,
-     /// Health status output
+    /// Health status output
     output_health: Box<dyn ActivityOutput<ComponentHealth>>,
 }
 
 impl BrakeController {
-  pub fn build(
+    pub fn build(
         activity_id: ActivityId,
         brake_instruction_topic: &str,
         health_topic: &str,
@@ -382,12 +377,12 @@ impl Activity for BrakeController {
                 )
             }
         }
-         // Always publish health status at the end of the step
+        // Always publish health status at the end of the step
         if let Ok(health_status) = self.output_health.write_uninit() {
             let status = ComponentHealth {
-                //timestamp: timestamp(),
+                
                 is_ok: true, // In a real system, this would involve checks
-                //timestamp: timestamp(),
+                
             };
             let health_status = health_status.write_payload(status);
             health_status.send().unwrap();
@@ -455,12 +450,12 @@ pub struct SteeringController {
     activity_id: ActivityId,
     /// Steering input
     input_steering: Box<dyn ActivityInput<Steering>>,
-     /// Health status output
+    /// Health status output
     output_health: Box<dyn ActivityOutput<ComponentHealth>>,
 }
 
 impl SteeringController {
-     pub fn build(
+    pub fn build(
         activity_id: ActivityId,
         steering_topic: &str,
         health_topic: &str,
@@ -495,9 +490,9 @@ impl Activity for SteeringController {
         // Always publish health status at the end of the step
         if let Ok(health_status) = self.output_health.write_uninit() {
             let status = ComponentHealth {
-                //timestamp: timestamp(),
+               
                 is_ok: true, // In a real system, this would involve checks
-                //timestamp: timestamp(),
+             
             };
             let health_status = health_status.write_payload(status);
            health_status.send().unwrap();
@@ -557,23 +552,23 @@ impl Activity for SystemHealth {
         let steering_health = self.input_steering_health.read().map(|m| *m.deref());
 
         if let (Ok(bh), Ok(sh)) = (brake_health, steering_health) {
+            // Print the received health data for debugging
             debug!(
                 "Received health status: brake_ok={}, steering_ok={}",
                 bh.is_ok, sh.is_ok
             );
             if let Ok(system_status) = self.output_system_health.write_uninit() {
                 let status = SystemHealthStatus {
-                    timestamp: timestamp(),
+                    
                     brake_controller_ok: bh.is_ok,
                     steering_controller_ok: sh.is_ok,
                 };
                 let system_status = system_status.write_payload(status);
-                if let Err(e) = system_status.send() {
-                    error!("SystemHealth failed to send status: {}", e);
-                }
+                system_status.send().unwrap();
+                
             }
         }
-    }
+    }    
 
     #[instrument(name = "SystemHealth shutdown")]
     fn shutdown(&mut self) {}

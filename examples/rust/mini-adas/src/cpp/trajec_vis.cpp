@@ -11,11 +11,11 @@ TrajectoryVisualizer::TrajectoryVisualizer(const uint64_t activity_id) {
     this->activity_id = activity_id;
 }
 
-void TrajectoryVisualizer::startup() {}
+void TrajectoryVisualizer::startup() {std::cout<<"TrajectoryVisualizer::startup()"<<std::endl;}
 
-void TrajectoryVisualizer::step() {}
+void TrajectoryVisualizer::step() {std::cout<<"TrajectoryVisualizer::step()"<<std::endl;}
 
-void TrajectoryVisualizer::shutdown() {}
+void TrajectoryVisualizer::shutdown() {std::cout<<"TrajectoryVisualizer::shutdown()"<<std::endl;}
 
 
 // Create glue code for interface to Rust

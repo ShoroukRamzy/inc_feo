@@ -164,20 +164,20 @@ pub fn agent_assignments() -> HashMap<AgentId, Vec<(WorkerId, Vec<ActivityIdAndB
 }
 
 pub fn activity_dependencies() -> ActivityDependencies {
-    //      Primary              |       Secondary1         |                  Secondary2                                secondary 3 
-    // ---------------------------------------------------------------------------------------------------|
+    //      Primary              |       Secondary1         |                  Secondary2                                                                secondary 3 
+    // --------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------
     //
-    //   Camera(40)   Radar(41)
+    //   Camera(40\0)   Radar(41\1)
     //        \           \
-    //                                 NeuralNet(42)
+    //                                 NeuralNet(42\2)
     //                                      | \                   \                     \
-    //                             EnvironmentRenderer(42) \         EmergencyBraking(43)    LaneAssist(44) 
-    //                                                      \              |                     | \           \
-    //                                                       \     BrakeController(6)    SteeringController(44) - TrajectoryVisualizer(44)
+    //                             EnvironmentRenderer(42\3) \         EmergencyBraking(43\4)    LaneAssist(44\5) \
+    //                                                      \              |                     | \               \
+    //                                                       \     BrakeController(43\6)  SteeringController(44\7) TrajectoryVisualizer(44\8)
     //                                                        \           |                       |             
     //                                                         \          \______________________\________/
     //                                                          \                                 |
-    //                                                           \                                |___________________    SystemHealth(45) 
+    //                                                           \                                |__________________________________________________SystemHealth(45\9) 
 
     let dependencies = [
         // Camera

@@ -19,6 +19,7 @@ use feo_com::iox2::{Iox2Input, Iox2Output};
 use feo_com::linux_shm::{LinuxShmInput, LinuxShmOutput};
 use feo_log::{debug, error};
 use feo_tracing::{instrument, tracing};
+use feo_time::timestamp;
 
 use std::hash::RandomState;
 use std::thread;
@@ -88,7 +89,9 @@ impl Activity for Camera {
             let image = self.get_image();
             debug!("Sending image: {image:?}");
             let camera = camera.write_payload(image);
-            camera.send().unwrap();
+            if let Err(e) = camera.send() {
+                error!("Camera failed to send image: {}", e);
+            }
         }
     }
 
@@ -151,8 +154,9 @@ impl Activity for Radar {
             let scan = self.get_scan();
             debug!("Sending scan: {scan:?}");
             let radar = radar.write_payload(scan);
-            radar.send().unwrap();
-           
+            if let Err(e) = radar.send() {
+                error!("Radar failed to send scan: {}", e);
+            }
         }
     }
     #[instrument(name = "Radar shutdown")]
@@ -235,6 +239,7 @@ impl Activity for NeuralNet {
         let scene = self.output_scene.write_uninit();
 
         if let (Ok(camera), Ok(radar), Ok(mut scene)) = (camera, radar, scene) {
+            debug!("Read camera input: {:?}", camera.deref());
             debug!("Inferring scene with neural network");
 
             Self::infer(camera.deref(), radar.deref(), scene.deref_mut());
@@ -389,6 +394,7 @@ impl Activity for BrakeController {
             
        }
     }
+
     #[instrument(name = "BrakeController shutdown")]
     fn shutdown(&mut self) {}
 }
@@ -551,19 +557,23 @@ impl Activity for SystemHealth {
         let steering_health = self.input_steering_health.read().map(|m| *m.deref());
 
         if let (Ok(bh), Ok(sh)) = (brake_health, steering_health) {
+            debug!(
+                "Received health status: brake_ok={}, steering_ok={}",
+                bh.is_ok, sh.is_ok
+            );
             if let Ok(system_status) = self.output_system_health.write_uninit() {
                 let status = SystemHealthStatus {
-                    //timestamp: timestamp(),
+                    timestamp: timestamp(),
                     brake_controller_ok: bh.is_ok,
                     steering_controller_ok: sh.is_ok,
-                    
                 };
                 let system_status = system_status.write_payload(status);
-                system_status.send().unwrap();
-                
+                if let Err(e) = system_status.send() {
+                    error!("SystemHealth failed to send status: {}", e);
+                }
             }
         }
-    }    
+    }
 
     #[instrument(name = "SystemHealth shutdown")]
     fn shutdown(&mut self) {}

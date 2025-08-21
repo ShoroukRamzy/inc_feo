@@ -2,9 +2,12 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::activities::components::{
-    BrakeController, Camera, EmergencyBraking, EnvironmentRenderer, NeuralNet, Radar,
-    SteeringController,
+use crate::activities::{
+    components::{
+        BrakeController, Camera, EmergencyBraking, EnvironmentRenderer, NeuralNet, Radar,
+        SteeringController, SystemHealth,
+    },
+    messages::{ComponentHealth, SystemHealthStatus},
 };
 use crate::activities::messages::{BrakeInstruction, CameraImage, RadarScan, Scene, Steering};
 use crate::ffi::{lane_assist, trajectory_visualizer};
@@ -34,6 +37,10 @@ pub const TOPIC_CONTROL_BRAKES: &str = "feo/com/vehicle/control/brakes";
 pub const TOPIC_CONTROL_STEERING: &str = "feo/com/vehicle/control/steering";
 pub const TOPIC_CAMERA_FRONT: &str = "feo/com/vehicle/camera/front";
 pub const TOPIC_RADAR_FRONT: &str = "feo/com/vehicle/radar/front";
+
+pub const TOPIC_HEALTH_BRAKE_CONTROLLER: &str = "feo/com/health/brake_controller";
+pub const TOPIC_HEALTH_STEERING_CONTROLLER: &str = "feo/com/health/steering_controller";
+pub const TOPIC_HEALTH_SYSTEM_OVERALL: &str = "feo/com/health/system_overall";
 
 /// Allow up to two recorder processes (that potentially need to subscribe to every topic)
 pub const MAX_ADDITIONAL_SUBSCRIBERS: usize = 2;
@@ -91,7 +98,9 @@ pub fn agent_assignments() -> HashMap<AgentId, Vec<(WorkerId, Vec<ActivityIdAndB
             ),
             (
                 6.into(),
-                Box::new(|id| BrakeController::build(id, TOPIC_CONTROL_BRAKES)),
+                Box::new(|id| {
+                    BrakeController::build(id, TOPIC_CONTROL_BRAKES, TOPIC_HEALTH_BRAKE_CONTROLLER)
+                }),
             ),
         ],
     );
@@ -101,7 +110,13 @@ pub fn agent_assignments() -> HashMap<AgentId, Vec<(WorkerId, Vec<ActivityIdAndB
             (5.into(), Box::new(|id| lane_assist::CppActivity::build(id))),
             (
                 7.into(),
-                Box::new(|id| SteeringController::build(id, TOPIC_CONTROL_STEERING)),
+                Box::new(|id| {
+                    SteeringController::build(
+                        id,
+                        TOPIC_CONTROL_STEERING,
+                        TOPIC_HEALTH_STEERING_CONTROLLER,
+                    )
+                }),
             ),
             (
                 8.into(),
@@ -110,6 +125,20 @@ pub fn agent_assignments() -> HashMap<AgentId, Vec<(WorkerId, Vec<ActivityIdAndB
         ],
     );
 
+    let w45: WorkerAssignment = (
+        45.into(),
+        vec![(
+            9.into(),
+            Box::new(|id| {
+                SystemHealth::build(
+                    id,
+                    TOPIC_HEALTH_BRAKE_CONTROLLER,
+                    TOPIC_HEALTH_STEERING_CONTROLLER,
+                    TOPIC_HEALTH_SYSTEM_OVERALL,
+                )
+            }),
+        )],
+    );
     // Assign workers to pools with exactly one pool belonging to one agent
     #[cfg(any(
         feature = "signalling_direct_tcp",
@@ -121,12 +150,13 @@ pub fn agent_assignments() -> HashMap<AgentId, Vec<(WorkerId, Vec<ActivityIdAndB
         (100.into(), vec![w40, w41]),
         (101.into(), vec![w42]),
         (102.into(), vec![w43, w44]),
+        (103.into(), vec![w45]),
     ]
     .into_iter()
     .collect();
 
     #[cfg(feature = "signalling_direct_mpsc")]
-    let assignment = [(100.into(), vec![w40, w41, w42, w43, w44])]
+    let assignment = [(100.into(), vec![w40, w41, w42, w43, w44, w45])]
         .into_iter()
         .collect();
 
@@ -134,16 +164,20 @@ pub fn agent_assignments() -> HashMap<AgentId, Vec<(WorkerId, Vec<ActivityIdAndB
 }
 
 pub fn activity_dependencies() -> ActivityDependencies {
-    //      Primary              |       Secondary1         |                  Secondary2
-    // ---------------------------------------------------------------------------------------------------
+    //      Primary              |       Secondary1         |                  Secondary2                                secondary 3 
+    // ---------------------------------------------------------------------------------------------------|
     //
     //   Camera(40)   Radar(41)
     //        \           \
     //                                 NeuralNet(42)
-    //                                      |                           \                     \
-    //                             EnvironmentRenderer(42)       EmergencyBraking(43)    LaneAssist(44)
-    //                                                                   |                     |
-    //                                                            BrakeController(43)   SteeringController(44)
+    //                                      | \                   \                     \
+    //                             EnvironmentRenderer(42) \         EmergencyBraking(43)    LaneAssist(44) 
+    //                                                      \              |                     | \           \
+    //                                                       \     BrakeController(6)    SteeringController(44) - TrajectoryVisualizer(44)
+    //                                                        \           |                       |             
+    //                                                         \          \______________________\________/
+    //                                                          \                                 |
+    //                                                           \                                |___________________    SystemHealth(45) 
 
     let dependencies = [
         // Camera
@@ -164,11 +198,13 @@ pub fn activity_dependencies() -> ActivityDependencies {
         (7.into(), vec![5.into()]),
         // TrajectoryVisualizer
         (8.into(), vec![5.into()]),
+          // SystemHealth
+        (9.into(), vec![6.into(), 7.into()]),
     ];
 
     dependencies.into()
 }
-
+//topic flow (data flow) direction
 pub fn topic_dependencies<'a>() -> Vec<TopicSpecification<'a>> {
     use Direction::*;
 
@@ -197,6 +233,18 @@ pub fn topic_dependencies<'a>() -> Vec<TopicSpecification<'a>> {
         TopicSpecification::new::<Steering>(
             TOPIC_CONTROL_STEERING,
             vec![(5.into(), Outgoing), (7.into(), Incoming)],
+        ),
+        TopicSpecification::new::<ComponentHealth>(
+            TOPIC_HEALTH_BRAKE_CONTROLLER,
+            vec![(6.into(), Outgoing), (9.into(), Incoming)],
+        ),
+        TopicSpecification::new::<ComponentHealth>(
+            TOPIC_HEALTH_STEERING_CONTROLLER,
+            vec![(7.into(), Outgoing), (9.into(), Incoming)],
+        ),
+        TopicSpecification::new::<SystemHealthStatus>(
+            TOPIC_HEALTH_SYSTEM_OVERALL,
+            vec![(9.into(), Outgoing)],
         ),
     ]
 }

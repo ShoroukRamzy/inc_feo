@@ -157,7 +157,9 @@ mod params {
     }
 
     impl Params {
-        const SECONDARY_IDS: [AgentId; 2] = [AgentId::new(101), AgentId::new(102)];
+        // This array is updated to include the new agent ID for the health monitor.
+        const SECONDARY_IDS: [AgentId; 3] =
+            [AgentId::new(101), AgentId::new(102), AgentId::new(103)];
         pub fn from_args() -> Self {
             let args: Vec<String> = std::env::args().collect();
 
@@ -175,6 +177,7 @@ mod params {
                         Self::SECONDARY_IDS.len()
                     )
                 });
+
 
             Self { agent_id }
         }

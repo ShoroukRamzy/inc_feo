@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::activities::messages::{BrakeInstruction, CameraImage, RadarScan, Scene, Steering};
+use crate::activities::messages::{
+    BrakeInstruction, CameraImage, ComponentHealth, RadarScan, Scene, Steering, SystemHealthStatus,
+};
 use core::fmt;
 use core::hash::{BuildHasher as _, Hasher as _};
 use core::mem::MaybeUninit;
@@ -15,10 +17,12 @@ use feo_com::interface::{ActivityInput, ActivityOutput};
 use feo_com::iox2::{Iox2Input, Iox2Output};
 #[cfg(feature = "com_linux_shm")]
 use feo_com::linux_shm::{LinuxShmInput, LinuxShmOutput};
-use feo_log::debug;
+use feo_log::{debug, error};
 use feo_tracing::{instrument, tracing};
+
 use std::hash::RandomState;
 use std::thread;
+
 
 const SLEEP_RANGE: Range<i64> = 10..45;
 
@@ -148,9 +152,9 @@ impl Activity for Radar {
             debug!("Sending scan: {scan:?}");
             let radar = radar.write_payload(scan);
             radar.send().unwrap();
+           
         }
     }
-
     #[instrument(name = "Radar shutdown")]
     fn shutdown(&mut self) {}
 }
@@ -237,10 +241,9 @@ impl Activity for NeuralNet {
             // Safety: `Scene` has `repr(C)` and was fully initialized by `Self::infer` above.
             let scene = unsafe { scene.assume_init() };
             debug!("Sending Scene {:?}", scene.deref());
-            scene.send().unwrap();
+             scene.send().unwrap();
         }
     }
-
     #[instrument(name = "NeuralNet shutdown")]
     fn shutdown(&mut self) {}
 }
@@ -322,6 +325,7 @@ impl Activity for EmergencyBraking {
     fn shutdown(&mut self) {}
 }
 
+
 /// Brake controller activity
 ///
 /// This component emulates a brake controller
@@ -334,13 +338,20 @@ pub struct BrakeController {
     activity_id: ActivityId,
     /// Brake instruction input
     input_brake_instruction: Box<dyn ActivityInput<BrakeInstruction>>,
+     /// Health status output
+    output_health: Box<dyn ActivityOutput<ComponentHealth>>,
 }
 
 impl BrakeController {
-    pub fn build(activity_id: ActivityId, brake_instruction_topic: &str) -> Box<dyn Activity> {
+  pub fn build(
+        activity_id: ActivityId,
+        brake_instruction_topic: &str,
+        health_topic: &str,
+    ) -> Box<dyn Activity> {
         Box::new(Self {
             activity_id,
             input_brake_instruction: activity_input(brake_instruction_topic),
+            output_health: activity_output(health_topic),
         })
     }
 }
@@ -366,8 +377,18 @@ impl Activity for BrakeController {
                 )
             }
         }
+         // Always publish health status at the end of the step
+        if let Ok(health_status) = self.output_health.write_uninit() {
+            let status = ComponentHealth {
+                //timestamp: timestamp(),
+                is_ok: true, // In a real system, this would involve checks
+                //timestamp: timestamp(),
+            };
+            let health_status = health_status.write_payload(status);
+            health_status.send().unwrap();
+            
+       }
     }
-
     #[instrument(name = "BrakeController shutdown")]
     fn shutdown(&mut self) {}
 }
@@ -428,13 +449,20 @@ pub struct SteeringController {
     activity_id: ActivityId,
     /// Steering input
     input_steering: Box<dyn ActivityInput<Steering>>,
+     /// Health status output
+    output_health: Box<dyn ActivityOutput<ComponentHealth>>,
 }
 
 impl SteeringController {
-    pub fn build(activity_id: ActivityId, steering_topic: &str) -> Box<dyn Activity> {
+     pub fn build(
+        activity_id: ActivityId,
+        steering_topic: &str,
+        health_topic: &str,
+    ) -> Box<dyn Activity> {
         Box::new(Self {
             activity_id,
             input_steering: activity_input(steering_topic),
+            output_health: activity_output(health_topic),
         })
     }
 }
@@ -458,11 +486,89 @@ impl Activity for SteeringController {
                 steering.angle
             )
         }
-    }
-
+        // Always publish health status at the end of the step
+        if let Ok(health_status) = self.output_health.write_uninit() {
+            let status = ComponentHealth {
+                //timestamp: timestamp(),
+                is_ok: true, // In a real system, this would involve checks
+                //timestamp: timestamp(),
+            };
+            let health_status = health_status.write_payload(status);
+           health_status.send().unwrap();
+        }
+}
     #[instrument(name = "SteeringController shutdown")]
     fn shutdown(&mut self) {}
 }
+
+/// System health check activity
+///
+/// This component emulates a system health check
+/// that runs at the end of the cycle. It consumes health reports
+/// from other critical components and publishes an aggregated status.
+#[derive(Debug)]
+pub struct SystemHealth {
+    /// ID of the activity
+    activity_id: ActivityId,
+    /// Brake controller health input
+    input_brake_health: Box<dyn ActivityInput<ComponentHealth>>,
+    /// Steering controller health input
+    input_steering_health: Box<dyn ActivityInput<ComponentHealth>>,
+    /// Aggregated health status output
+    output_system_health: Box<dyn ActivityOutput<SystemHealthStatus>>,
+}
+
+impl SystemHealth {
+    pub fn build(
+        activity_id: ActivityId,
+        brake_health_topic: &str,
+        steering_health_topic: &str,
+        system_health_topic: &str,
+    ) -> Box<dyn Activity> {
+        Box::new(Self {
+            activity_id,
+            input_brake_health: activity_input(brake_health_topic),
+            input_steering_health: activity_input(steering_health_topic),
+            output_system_health: activity_output(system_health_topic),
+        })
+    }
+}
+
+impl Activity for SystemHealth {
+    fn id(&self) -> ActivityId {
+        self.activity_id
+    }
+
+    #[instrument(name = "SystemHealth startup")]
+    fn startup(&mut self) {}
+
+    #[instrument(name = "SystemHealth")]
+    fn step(&mut self) {
+        debug!("Stepping SystemHealth");
+        sleep_random();
+
+        let brake_health = self.input_brake_health.read().map(|m| *m.deref());
+        let steering_health = self.input_steering_health.read().map(|m| *m.deref());
+
+        if let (Ok(bh), Ok(sh)) = (brake_health, steering_health) {
+            if let Ok(system_status) = self.output_system_health.write_uninit() {
+                let status = SystemHealthStatus {
+                    //timestamp: timestamp(),
+                    brake_controller_ok: bh.is_ok,
+                    steering_controller_ok: sh.is_ok,
+                    
+                };
+                let system_status = system_status.write_payload(status);
+                system_status.send().unwrap();
+                
+            }
+        }
+    }    
+
+    #[instrument(name = "SystemHealth shutdown")]
+    fn shutdown(&mut self) {}
+}
+
 
 /// Create an activity input.
 fn activity_input<T>(topic: &str) -> Box<dyn ActivityInput<T>>

@@ -78,6 +78,32 @@ pub struct Steering {
     pub angle: f64,
 }
 
+///extended mini-adas
+/// 
+
+/// Health status of an individual component
+///
+/// This message is sent by a component to report its health status.
+#[cfg_attr(feature = "recording", derive(Serialize, Deserialize, MaxSize))]
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct ComponentHealth {
+   // pub timestamp: u64,
+    pub is_ok: bool,
+}
+
+/// Aggregated system health status
+///
+/// This message is sent by the system health monitor activity at the end of a cycle.
+#[cfg_attr(feature = "recording", derive(Serialize, Deserialize, MaxSize))]
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct SystemHealthStatus {
+    //pub timestamp: u64,
+    pub brake_controller_ok: bool,
+    pub steering_controller_ok: bool,
+}
+
 /// Return a type registry containing the types defined in this file
 #[cfg(feature = "recording")]
 pub fn type_registry() -> TypeRegistry {
@@ -108,7 +134,9 @@ pub fn type_registry() -> TypeRegistry {
         RadarScan, |topic: &str| activity_input(topic);
         Scene, |topic: &str| activity_input(topic);
         BrakeInstruction, |topic: &str| activity_input(topic);
-        Steering, |topic: &str| activity_input(topic)
+        Steering, |topic: &str| activity_input(topic);
+        ComponentHealth, |topic: &str| activity_input(topic);
+        SystemHealthStatus, |topic: &str| activity_input(topic)
     );
     registry
 }

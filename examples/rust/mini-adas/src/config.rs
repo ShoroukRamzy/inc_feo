@@ -204,7 +204,7 @@ pub fn activity_dependencies() -> ActivityDependencies {
 
     dependencies.into()
 }
-//topic flow (data flow) direction
+//topic flow (data flow) direction // topic is coming from and going to
 pub fn topic_dependencies<'a>() -> Vec<TopicSpecification<'a>> {
     use Direction::*;
 

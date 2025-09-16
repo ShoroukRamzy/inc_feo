@@ -171,11 +171,13 @@ mod cfg {
         let agent_ids: HashSet<AgentId> = agent_assignments().keys().copied().collect();
         check_ids(&params.recorder_ids, &agent_ids);
 
+
         PrimaryConfig {
             cycle_time: params.feo_cycle_time,
             activity_dependencies: activity_dependencies(),
             recorder_ids: params.recorder_ids,
             worker_assignments: agent_assignments().remove(&AGENT_ID).unwrap(),
+            //@SH activities should respond within this time to scheduler
             timeout: Duration::from_secs(10),
             bind_address_senders: NodeAddress::Tcp(BIND_ADDR),
             bind_address_receivers: NodeAddress::Tcp(BIND_ADDR2),
